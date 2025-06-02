@@ -16,6 +16,11 @@ PURPLE='\033[1;38;5;135m'
 PINK='\033[1;38;5;201m'
 LIME='\033[1;38;5;154m'
 TEAL='\033[1;38;5;51m'
+VIOLET='\033[1;38;5;141m'
+GOLD='\033[1;38;5;220m'
+CORAL='\033[1;38;5;203m'
+SKYBLUE='\033[1;38;5;117m'
+EMERALD='\033[1;38;5;36m'
 NC='\033[0m' # No Color
 
 # Function to log messages
@@ -24,11 +29,11 @@ log_message() {
     echo -e "$message" | tee -a "$LOGFILE"
 }
 
-# Function to display a spinner with enhanced Unicode
+# Function to display a spinner with enhanced Unicode in purple
 spinner() {
     local pid=$1
     local delay=0.08
-    local spinstr='⡿⣟⣯⣷⣾⣽⣻⢿⡷⣧⣗⣮⢾⡽⣫⣹⢷⣯⣟' # Longer Unicode spinner
+    local spinstr='⡿⣟⣯⣷⣾⣽⣻⢿' # Enhanced Unicode spinner
     local message="$2"
     local max_width=60
     local trunc_message="${message:0:$((max_width-4))}"
@@ -58,9 +63,9 @@ print_header() {
     local title_width=$(( ${#message} + 2 ))
     local left_pad=$(( (width - title_width) / 2 ))
     local right_pad=$(( width - title_width - left_pad ))
-    log_message "${ORANGE}┌$(printf '─%.0s' $(seq 1 $width))┐${NC}"
-    log_message "${ORANGE}│$(printf '%*s' "$left_pad" '') ${PINK}${message}${NC} $(printf '%*s' "$right_pad" '')│${NC}"
-    log_message "${ORANGE}└$(printf '─%.0s' $(seq 1 $width))┘${NC}"
+    log_message "${GOLD}┌$(printf '─%.0s' $(seq 1 $width))┐${NC}"
+    log_message "${GOLD}│$(printf '%*s' "$left_pad" '') ${CORAL}${message}${NC} $(printf '%*s' "$right_pad" '')│${NC}"
+    log_message "${GOLD}└$(printf '─%.0s' $(seq 1 $width))┘${NC}"
 }
 
 # Function to authenticate sudo upfront
@@ -76,25 +81,47 @@ authenticate_sudo() {
 # Function to perform updates
 perform_updates() {
     print_header "System Update Process"
-    log_message "${CYAN}Starting system updates...${NC}"
+    log_message "${SKYBLUE}Starting system updates...${NC}"
 
-    # Update Pacman (Arch Linux package manager)
-    if check_command pacman; then
-        print_header "Pacman Package Updates"
-        sudo pacman -Syu --noconfirm 2>&1 | tee -a "$LOGFILE" &
-        spinner $! "Updating and upgrading packages"
+    # Update APT
+    if check_command apt-get; then
+        print_header "APT Package Updates"
+        sudo apt-get update -y 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Updating package lists"
         if [ $? -ne 0 ]; then
-            log_message "${RED}Pacman update failed. Check log for details.${NC}"
+            log_message "${RED}APT update failed. Check log for details.${NC}"
             return 1
         fi
-        sudo pacman -Sc --noconfirm 2>&1 | tee -a "$LOGFILE" &
+        sudo apt-get upgrade -y 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Installing package upgrades"
+        if [ $? -ne 0 ]; then
+            log_message "${RED}APT upgrade failed. Check log for details.${NC}"
+            return 1
+        fi
+        sudo apt-get autoremove -y 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Removing unused packages"
+        sudo apt-get autoclean -y 2>&1 | tee -a "$LOGFILE" &
         spinner $! "Cleaning package cache"
-        log_message "${LIME}Pacman updates completed successfully.${NC}"
+        log_message "${EMERALD}APT updates completed successfully.${NC}"
     else
-        log_message "${RED}Pacman not found. Skipping Pacman updates.${NC}"
+        log_message "${RED}APT not found. Skipping APT updates.${NC}"
     fi
 
-    # Update Flatpak (if installed)
+    # Update Snap
+    if check_command snap; then
+        print_header "Snap Package Updates"
+        sudo snap refresh 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Refreshing Snap packages"
+        if [ $? -ne 0 ]; then
+            log_message "${RED}Snap refresh failed. Check log for details.${NC}"
+        else
+            log_message "${EMERALD}Snap updates completed successfully.${NC}"
+        fi
+    else
+        log_message "${RED}Snap not installed. Skipping Snap updates.${NC}"
+    fi
+
+    # Update Flatpak
     if check_command flatpak; then
         print_header "Flatpak Package Updates"
         flatpak update -y 2>&1 | tee -a "$LOGFILE" &
@@ -102,13 +129,13 @@ perform_updates() {
         if [ $? -ne 0 ]; then
             log_message "${RED}Flatpak update failed. Check log for details.${NC}"
         else
-            log_message "${LIME}Flatpak updates completed successfully.${NC}"
+            log_message "${EMERALD}Flatpak updates completed successfully.${NC}"
         fi
     else
         log_message "${RED}Flatpak not installed. Skipping Flatpak updates.${NC}"
     fi
 
-    # Update firmware
+    # Update Firmware
     if check_command fwupdmgr; then
         print_header "Firmware Updates"
         sudo fwupdmgr refresh 2>&1 | tee -a "$LOGFILE" &
@@ -118,84 +145,101 @@ perform_updates() {
         if [ $? -ne 0 ]; then
             log_message "${RED}Firmware update failed. Check log for details.${NC}"
         else
-            log_message "${LIME}Firmware updates completed successfully.${NC}"
+            log_message "${EMERALD}Firmware updates completed successfully.${NC}"
         fi
     else
         log_message "${RED}fwupdmgr not installed. Skipping firmware updates.${NC}"
     fi
 
+    # Update Rust
+    if check_command rustup; then
+        print_header "Rust Updates"
+        rustup update 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Updating Rust toolchain"
+        if [ $? -ne 0 ]; then
+            log_message "${RED}Rust update failed. Check log for details.${NC}"
+        else
+            log_message "${EMERALD}Rust updates completed successfully.${NC}"
+        fi
+    else
+        log_message "${RED}rustup not installed. Skipping Rust updates.${NC}"
+    fi
+
+    # Update Python (pip packages)
+    if check_command pip3; then
+        print_header "Python Package Updates"
+        pip3 install --upgrade pip 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Upgrading pip"
+        pip3 list --outdated | grep -v '^\-e' | cut -d = -f 1 | xargs -n1 pip3 install --upgrade 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Upgrading Python packages"
+        if [ $? -ne 0 ]; then
+            log_message "${RED}Python package update failed. Check log for details.${NC}"
+        else
+            log_message "${EMERALD}Python package updates completed successfully.${NC}"
+        fi
+    else
+        log_message "${RED}pip3 not installed. Skipping Python package updates.${NC}"
+    fi
+
+    # Update Node.js (via npm)
+    if check_command npm; then
+        print_header "Node.js Package Updates"
+        npm install -g npm@latest 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Upgrading npm"
+        npm update -g 2>&1 | tee -a "$LOGFILE" &
+        spinner $! "Updating global Node.js packages"
+        if [ $? -ne 0 ]; then
+            log_message "${RED}Node.js package update failed. Check log for details.${NC}"
+        else
+            log_message "${EMERALD}Node.js package updates completed successfully.${NC}"
+        fi
+    else
+        log_message "${RED}npm not installed. Skipping Node.js package updates.${NC}"
+    fi
+
     # Update Plymouth
     print_header "Plymouth Updates"
     local plymouth_updated=false
-    local source_file="/usr/share/HackerOS/ICONS/Plymouth-Icons/watermark.png"
-    local dest_dir="/usr/share/plymouth/themes/spinner"
-    local dest_file="$dest_dir/watermark.png"
+    local source_dir="/usr/share/HackerOS/ICONS/Plymouth-Icons"
+    local config_dir="/usr/share/HackerOS/Config-Files"
 
-    if [ -f "$source_file" ]; then
-        sudo mkdir -p "$dest_dir" 2>&1 | tee -a "$LOGFILE"
-        sudo cp -f "$source_file" "$dest_file" 2>&1 | tee -a "$LOGFILE" &
-        spinner $! "Copying watermark.png"
-        plymouth_updated=true
-    else
-        log_message "${RED}File watermark.png not found in /usr/share/HackerOS/ICONS/Plymouth-Icons.${NC}"
-    fi
-    $plymouth_updated && log_message "${LIME}Plymouth updates completed successfully.${NC}"
+    for file in \
+        "$source_dir/ubuntu-logo.png:/usr/share/plymouth" \
+        "$source_dir/watermark.png:/usr/share/plymouth/themes/spinner" \
+        "$config_dir/org.gnome.Software.desktop:/usr/share/applications" \
+        "$source_dir/bgrt-fallback.png:/usr/share/plymouth/themes/spinner"; do
+        src=${file%%:*}
+        dest=${file##*:}
+        if [ -f "$src" ]; then
+            sudo mkdir -p "$dest" 2>&1 | tee -a "$LOGFILE"
+            sudo cp -f "$src" "$dest" 2>&1 | tee -a "$LOGFILE" &
+            spinner $! "Copying $(basename "$src")"
+            plymouth_updated=true
+        else
+            log_message "${RED}File $(basename "$src") not found in $source_dir.${NC}"
+        fi
+    done
+    $plymouth_updated && log_message "${EMERALD}Plymouth updates completed successfully.${NC}"
 }
 
-# Function to check disk space
-check_disk_space() {
-    print_header "Disk Space Check"
-    log_message "${CYAN}Checking disk space...${NC}"
-    df -h 2>&1 | tee -a "$LOGFILE" &
-    spinner $! "Gathering disk usage information"
-    log_message "${LIME}Disk space check completed.${NC}"
-}
-
-# Function to clear package cache
-clear_package_cache() {
-    print_header "Clear Package Cache"
-    if check_command pacman; then
-        sudo pacman -Sc --noconfirm 2>&1 | tee -a "$LOGFILE" &
-        spinner $! "Clearing Pacman package cache"
-        log_message "${LIME}Pacman cache cleared successfully.${NC}"
-    else
-        log_message "${RED}Pacman not found. Skipping cache clear.${NC}"
-    fi
-}
-
-# Function to sync system time
-sync_system_time() {
-    print_header "System Time Synchronization"
-    if check_command timedatectl; then
-        sudo timedatectl set-ntp true 2>&1 | tee -a "$LOGFILE" &
-        spinner $! "Synchronizing system time"
-        log_message "${LIME}System time synchronized successfully.${NC}"
-    else
-        log_message "${RED}timedatectl not found. Skipping time sync.${NC}"
-    fi
-}
-
-# Function to display menu with more options
+# Function to display menu with reduced options
 show_menu() {
     while true; do
         print_header "Update Options"
-        log_message "${CYAN}Available actions:${NC}"
+        log_message "${SKYBLUE}Available actions:${NC}"
         log_message "${WHITE}  e) Exit          Close the terminal${NC}"
         log_message "${WHITE}  r) Reboot        Reboot the system${NC}"
         log_message "${WHITE}  s) Shutdown      Shut down the system${NC}"
         log_message "${WHITE}  l) Log out       Log out of the current session${NC}"
         log_message "${WHITE}  t) Try again     Rerun the update process${NC}"
         log_message "${WHITE}  v) View log      View the update log${NC}"
-        log_message "${WHITE}  d) Disk space    Check disk space usage${NC}"
-        log_message "${WHITE}  c) Clear cache   Clear package cache${NC}"
-        log_message "${WHITE}  n) Sync time     Synchronize system time${NC}"
-        printf "${ORANGE}⤷ Select an option [e/r/s/l/t/v/d/c/n]: ${NC}"
+        printf "${GOLD}⤷ Select an option [e/r/s/l/t/v]: ${NC}"
         read -n 1 choice
         echo
 
         case "${choice,,}" in
             e)
-                log_message "${GREEN}Exiting for update mode...${NC}"
+                log_message "${GREEN}Exiting update mode...${NC}"
                 exit 0
                 ;;
             r)
@@ -220,29 +264,15 @@ show_menu() {
                 perform_updates
                 ;;
             v)
-                log_message "${CYAN}Viewing update log...${NC}"
+                log_message "${SKYBLUE}Viewing update log...${NC}"
                 if [ -f "$LOGFILE" ]; then
                     less "$LOGFILE"
                 else
                     log_message "${RED}Log file not found.${NC}"
                 fi
                 ;;
-            d)
-                log_message "${YELLOW}Checking disk space...${NC}"
-                check_disk_space
-                ;;
-            c)
-                log_message "${YELLOW}Clearing package cache...${NC}"
-                authenticate_sudo
-                clear_package_cache
-                ;;
-            n)
-                log_message "${YELLOW}Synchronizing system time...${NC}"
-                authenticate_sudo
-                sync_system_time
-                ;;
             *)
-                log_message "${RED}Invalid option. Please use e, r, s, l, t, v, d, c, or n.${NC}"
+                log_message "${RED}Invalid option. Please use e, r, s, l, t, or v.${NC}"
                 ;;
         esac
     done
@@ -251,7 +281,7 @@ show_menu() {
 # Main execution
 {
     print_header "System Update Script"
-    log_message "${CYAN}Initializing update process...${NC}"
+    log_message "${SKYBLUE}Initializing update process...${NC}"
     authenticate_sudo
     perform_updates
     show_menu
