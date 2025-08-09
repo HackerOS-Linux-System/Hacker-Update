@@ -1,1 +1,13 @@
+[package]
+name = "hacker-update"
+version = "0.0.1"
+edition = "2021"
+description = "Update HackerOS"
+authors = ["HackerOS Team <hackeros068@gmail.com>"]
+license = "MIT"
 
+[dependencies]
+colored = "2.1"
+indicatif = "0.17"
+crossterm = "0.27"
+whoami = "1.5"
