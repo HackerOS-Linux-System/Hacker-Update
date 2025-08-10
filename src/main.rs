@@ -1,182 +1,196 @@
-use std::process::{Command, ExitStatus};
-use std::env;
-use std::os::unix::fs::PermissionsExt;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
+use colored::*;
+use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use std::fs;
 
-const DNF_PATH: &str = "/usr/lib/HackerOS/dnf";
-
-fn print_help() {
-    println!("hacker: A simple package management tool");
-    println!("Usage: hacker <command> [arguments]");
-    println!("\nAvailable commands:");
-    println!(" autoremove        Remove unneeded packages");
-    println!(" install <packages> Install one or more packages");
-    println!(" remove <packages>  Remove one or more packages");
-    println!(" list              List installed packages");
-    println!(" search <term>     Search for packages");
-    println!(" clean             Clean package cache");
-    println!(" info <package>    Show package information");
-    println!(" repolist          List enabled repositories");
-    println!(" copr-enable <repo> Enable a COPR repository");
-    println!(" copr-disable <repo> Disable a COPR repository");
-    println!(" ?                 Show this help message");
-    println!("\nNote: Use 'hacker-update' for system updates and upgrades.");
-}
-
-fn execute_dnf(args: Vec<&str>, use_sudo: bool) -> Result<ExitStatus, String> {
-    let mut command = if use_sudo {
-        let mut cmd = Command::new("sudo");
-        cmd.arg(DNF_PATH);
-        cmd
+fn main() -> io::Result<()> {
+    // Enter alternate screen and enable raw mode for key input
+    execute!(io::stdout(), EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    // Print stylized header with gradient-like effect
+    println!("{}", "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓".bright_green().bold());
+    println!("{}", "┃ Hacker-Update ┃".bright_cyan().bold().on_bright_black());
+    println!("{}", "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛".bright_green().bold());
+    println!("{}", " Initializing system updates...".bright_blue().italic());
+    println!();
+    // Define update commands with associated colors for visual distinction
+    let update_commands = vec![
+        ("DNF System Update", vec![
+            ("sudo /usr/lib/HackerOS/dnf update -y", Color::BrightMagenta),
+         ("sudo /usr/lib/HackerOS/dnf upgrade -y", Color::BrightMagenta),
+         ("sudo /usr/lib/HackerOS/dnf autoremove -y", Color::BrightMagenta),
+        ]),
+        ("Flatpak Update", vec![("flatpak update -y", Color::BrightYellow)]),
+        ("Snap Update", vec![("sudo snap refresh", Color::BrightBlue)]),
+        ("Firmware Update", vec![
+            ("sudo fwupdmgr refresh", Color::BrightGreen),
+         ("sudo fwupdmgr update", Color::BrightGreen),
+        ]),
+    ];
+    // Store logs
+    let mut logs: Vec<String> = Vec::new();
+    // Initialize MultiProgress for concurrent progress bars
+    let multi_pb = MultiProgress::new();
+    // Run each update command with enhanced progress bar
+    for (update_name, commands) in update_commands {
+        println!("{}", format!(" Starting {} ", update_name).white().bold().on_color(update_name_color(update_name)));
+        let pb = multi_pb.add(ProgressBar::new(100));
+        pb.set_style(
+            ProgressStyle::default_bar()
+            .template("{spinner:.cyan} [{elapsed_precise}] {bar:50.green/blue} {msg} {percent:>3}%")
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏ ")
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈"),
+        );
+        for (_i, (cmd, color)) in commands.iter().enumerate() {
+            pb.set_message(format!("{}", cmd.color(*color).bold()).to_string());
+            let output = Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+            match output {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    logs.push(format!("{} Output:\n{}", cmd, stdout));
+                    if !stderr.is_empty() {
+                        logs.push(format!("{} Errors:\n{}", cmd, stderr));
+                    }
+                    if !output.status.success() {
+                        println!("{}", format!(" Error running {} ", cmd).white().bold().on_bright_red());
+                    } else {
+                        println!("{}", format!(" Completed {} ", cmd).white().bold().on_bright_green());
+                    }
+                }
+                Err(e) => {
+                    logs.push(format!("Failed to execute {}: {}", cmd, e));
+                    println!("{}", format!(" Failed to execute {}: {} ", cmd, e).white().bold().on_bright_red());
+                }
+            }
+            pb.inc(100 / commands.len() as u64);
+            thread::sleep(Duration::from_millis(200));
+        }
+        pb.finish_with_message(format!(" {} completed ", update_name).white().bold().to_string());
+        println!();
+    }
+    // Run the custom script
+    let script_path = "/usr/share/HackerOS/Scripts/Bin/Update-usrshare.sh";
+    if fs::metadata(script_path).is_ok() {
+        println!("{}", " Starting custom update script ".white().bold().on_bright_purple());
+        let pb = multi_pb.add(ProgressBar::new_spinner());
+        pb.set_style(
+            ProgressStyle::default_spinner()
+            .template("{spinner:.purple} {msg} [{elapsed_precise}]")
+            .unwrap()
+            .tick_chars("⣾⣷⣯⣟⡿⢿⣻⣽"),
+        );
+        pb.set_message("Executing Update-usrshare.sh".to_string());
+        let output = Command::new("sh")
+        .arg(script_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+        match output {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                logs.push(format!("Update-usrshare.sh Output:\n{}", stdout));
+                if !stderr.is_empty() {
+                    logs.push(format!("Update-usrshare.sh Errors:\n{}", stderr));
+                }
+                if !output.status.success() {
+                    println!("{}", " Error running custom script ".white().bold().on_bright_red());
+                } else {
+                    println!("{}", " Completed custom script ".white().bold().on_bright_green());
+                }
+            }
+            Err(e) => {
+                logs.push(format!("Failed to execute script: {}", e));
+                println!("{}", format!(" Failed to execute script: {} ", e).white().bold().on_bright_red());
+            }
+        }
+        pb.finish_with_message(" Script execution completed ".to_string());
     } else {
-        Command::new(DNF_PATH)
-    };
-
-    let output = command
-    .args(&args)
-    .status()
-    .map_err(|e| format!("Failed to execute dnf: {}", e))?;
-    Ok(output)
+        println!("{}", " Custom script not found ".white().bold().on_bright_red());
+        logs.push("Custom script not found!".to_string());
+    }
+    // Display stylized menu with gradient borders
+    loop {
+        println!();
+        println!("{}", "╔════════════════════════════════════════════════╗".bright_cyan().bold());
+        println!("{}", "║ Update Completed! ║".white().bold().on_bright_black());
+        println!("{}", "╠════════════════════════════════════════════════╣".bright_cyan().bold());
+        println!("{}", "║ (E)xit (S)hutdown (R)eboot ║".bright_yellow().bold());
+        println!("{}", "║ (L)og Out (T)ry again (S)ow logs ║".bright_yellow().bold());
+        println!("{}", "╚════════════════════════════════════════════════╝".bright_cyan().bold());
+        println!("{}", " Select an option: ".white().italic());
+        io::stdout().flush()?;
+        if let Event::Key(key_event) = event::read()? {
+            match key_event.code {
+                KeyCode::Char('e') | KeyCode::Char('E') => {
+                    println!("{}", " Exiting ".white().bold().on_bright_blue());
+                    break;
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    println!("{}", " Shutting down ".white().bold().on_bright_blue());
+                    let _ = Command::new("sudo").arg("poweroff").output();
+                    break;
+                }
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    println!("{}", " Rebooting ".white().bold().on_bright_blue());
+                    let _ = Command::new("sudo").arg("reboot").output();
+                    break;
+                }
+                KeyCode::Char('l') | KeyCode::Char('L') => {
+                    println!("{}", " Logging out ".white().bold().on_bright_blue());
+                    let _ = Command::new("pkill").arg("-u").arg(&whoami::username()).output();
+                    break;
+                }
+                KeyCode::Char('t') | KeyCode::Char('T') => {
+                    println!("{}", " Restarting updates ".white().bold().on_bright_blue());
+                    let _ = execute!(io::stdout(), LeaveAlternateScreen)?;
+                    disable_raw_mode()?;
+                    main()?;
+                    return Ok(());
+                }
+                KeyCode::Char('h') | KeyCode::Char('H') => {
+                    println!("{}", " Update Logs ".white().bold().on_bright_cyan());
+                    println!("{}", "╔════════════════════════════════════════════════╗".bright_cyan().bold());
+                    for log in &logs {
+                        println!("{}", format!("║ {} ", log).white().on_bright_black());
+                    }
+                    println!("{}", "╚════════════════════════════════════════════════╝".bright_cyan().bold());
+                }
+                _ => {
+                    println!("{}", " Invalid option, try again. ".white().bold().on_bright_red());
+                }
+            }
+        }
+    }
+    // Cleanup
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+    Ok(())
 }
 
-fn can_run_without_sudo() -> bool {
-    // Check if user has write permissions to /usr/lib/HackerOS/dnf
-    if let Ok(metadata) = std::fs::metadata(DNF_PATH) {
-        let permissions = metadata.permissions();
-        let mode = permissions.mode();
-        // Check if executable and writable by user or group
-        (mode & 0o111) != 0 && (mode & 0o600) != 0
-    } else {
-        false
+// Helper function to assign background colors based on update type
+fn update_name_color(update_name: &str) -> Color {
+    match update_name {
+        "DNF System Update" => Color::BrightMagenta,
+        "Flatpak Update" => Color::BrightYellow,
+        "Snap Update" => Color::BrightBlue,
+        "Firmware Update" => Color::BrightGreen,
+        _ => Color::BrightBlack,
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Error: No command provided");
-        print_help();
-        std::process::exit(1);
-    }
-
-    let command = &args[1];
-    let use_sudo = !can_run_without_sudo();
-
-    match command.as_str() {
-        "autoremove" => {
-            match execute_dnf(vec!["autoremove", "-y"], use_sudo) {
-                Ok(status) if status.success() => println!("Autoremove completed successfully"),
-                Ok(_) => println!("Autoremove failed"),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "install" => {
-            if args.len() < 3 {
-                println!("Error: At least one package name required for install");
-                std::process::exit(1);
-            }
-            let packages = &args[2..];
-            let mut dnf_args = vec!["install", "-y"];
-            dnf_args.extend(packages.iter().map(|s| s.as_str()));
-            match execute_dnf(dnf_args, use_sudo) {
-                Ok(status) if status.success() => println!("Package(s) {} installed successfully", packages.join(" ")),
-                Ok(_) => println!("Failed to install package(s) {}", packages.join(" ")),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "remove" => {
-            if args.len() < 3 {
-                println!("Error: At least one package name required for remove");
-                std::process::exit(1);
-            }
-            let packages = &args[2..];
-            let mut dnf_args = vec!["remove", "-y"];
-            dnf_args.extend(packages.iter().map(|s| s.as_str()));
-            match execute_dnf(dnf_args, use_sudo) {
-                Ok(status) if status.success() => println!("Package(s) {} removed successfully", packages.join(" ")),
-                Ok(_) => println!("Failed to remove package(s) {}", packages.join(" ")),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "list" => {
-            match execute_dnf(vec!["list", "installed"], use_sudo) {
-                Ok(status) if status.success() => println!("Listed installed packages"),
-                Ok(_) => println!("Failed to list packages"),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "search" => {
-            if args.len() < 3 {
-                println!("Error: Search term required");
-                std::process::exit(1);
-            }
-            let term = &args[2];
-            match execute_dnf(vec!["search", term], use_sudo) {
-                Ok(status) if status.success() => println!("Search completed"),
-                Ok(_) => println!("Search failed"),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "clean" => {
-            match execute_dnf(vec!["clean", "all"], use_sudo) {
-                Ok(status) if status.success() => println!("Package cache cleaned successfully"),
-                Ok(_) => println!("Failed to clean package cache"),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "info" => {
-            if args.len() < 3 {
-                println!("Error: Package name required for info");
-                std::process::exit(1);
-            }
-            let package = &args[2];
-            match execute_dnf(vec!["info", package], use_sudo) {
-                Ok(status) if status.success() => println!("Package information displayed"),
-                Ok(_) => println!("Failed to display package information"),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "repolist" => {
-            match execute_dnf(vec!["repolist"], use_sudo) {
-                Ok(status) if status.success() => println!("Repository list displayed"),
-                Ok(_) => println!("Failed to display repository list"),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "copr-enable" => {
-            if args.len() < 3 {
-                println!("Error: COPR repository name required");
-                std::process::exit(1);
-            }
-            let repo = &args[2];
-            match execute_dnf(vec!["copr", "enable", repo], use_sudo) {
-                Ok(status) if status.success() => println!("COPR repository {} enabled", repo),
-                Ok(_) => println!("Failed to enable COPR repository {}", repo),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "copr-disable" => {
-            if args.len() < 3 {
-                println!("Error: COPR repository name required");
-                std::process::exit(1);
-            }
-            let repo = &args[2];
-            match execute_dnf(vec!["copr", "disable", repo], use_sudo) {
-                Ok(status) if status.success() => println!("COPR repository {} disabled", repo),
-                Ok(_) => println!("Failed to disable COPR repository {}", repo),
-                Err(e) => println!("Error: {}", e),
-            }
-        }
-        "update" | "upgrade" => {
-            println!("Error: Use 'hacker-update' for system updates and upgrades.");
-            std::process::exit(1);
-        }
-        "?" => {
-            print_help();
-        }
-        _ => {
-            println!("Error: Unknown command '{}'", command);
-            print_help();
-            std::process::exit(1);
-        }
-    }
-}
