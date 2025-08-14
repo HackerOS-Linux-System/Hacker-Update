@@ -13,7 +13,7 @@ use crossterm::{
 // Constants for styling
 const HEADER_WIDTH: usize = 60;
 const SPINNER_TICK_CHARS: &str = "⣾⣷⣯⣟⡿⢿⣻⣽";
-const PROGRESS_BAR_CHARS: &str = "█▉▊▋▌▍▎▏  ";
+const PROGRESS_BAR_CHARS: &str = "█▉▊▋▌▍▎▏ ";
 
 // Structure to hold command details
 struct CommandInfo {
@@ -39,36 +39,73 @@ fn main() -> io::Result<()> {
     // Define update sections
     let update_sections = vec![
         UpdateSection {
-            name: "DNF System Update",
+            name: "APT System Update",
             commands: vec![
-                CommandInfo { name: "DNF Update", cmd: "sudo /usr/lib/HackerOS/dnf update -y", color: Color::BrightMagenta },
-                CommandInfo { name: "DNF Upgrade", cmd: "sudo /usr/lib/HackerOS/dnf upgrade -y", color: Color::BrightMagenta },
-                CommandInfo { name: "DNF Autoremove", cmd: "sudo /usr/lib/HackerOS/dnf autoremove -y", color: Color::BrightMagenta },
+                CommandInfo {
+                    name: "APT Update",
+                    cmd: "sudo /usr/lib/HackerOS/apt update",
+                    color: Color::BrightMagenta,
+                },
+                CommandInfo {
+                    name: "APT Upgrade",
+                    cmd: "sudo /usr/lib/HackerOS/apt upgrade -y",
+                    color: Color::BrightMagenta,
+                },
+                CommandInfo {
+                    name: "APT Autoremove",
+                    cmd: "sudo /usr/lib/HackerOS/apt autoremove -y",
+                    color: Color::BrightMagenta,
+                },
+                CommandInfo {
+                    name: "APT Autoclean",
+                    cmd: "sudo /usr/lib/HackerOS/apt autoclean",
+                    color: Color::BrightMagenta,
+                },
             ],
         },
         UpdateSection {
             name: "Flatpak Update",
             commands: vec![
-                CommandInfo { name: "Flatpak Update", cmd: "flatpak update -y", color: Color::BrightYellow },
+                CommandInfo {
+                    name: "Flatpak Update",
+                    cmd: "flatpak update -y",
+                    color: Color::BrightYellow,
+                },
             ],
         },
         UpdateSection {
             name: "Snap Update",
             commands: vec![
-                CommandInfo { name: "Snap Refresh", cmd: "sudo snap refresh", color: Color::BrightBlue },
+                CommandInfo {
+                    name: "Snap Refresh",
+                    cmd: "sudo snap refresh",
+                    color: Color::BrightBlue,
+                },
             ],
         },
         UpdateSection {
             name: "Firmware Update",
             commands: vec![
-                CommandInfo { name: "Firmware Refresh", cmd: "sudo fwupdmgr refresh", color: Color::BrightGreen },
-                CommandInfo { name: "Firmware Update", cmd: "sudo fwupdmgr update", color: Color::BrightGreen },
+                CommandInfo {
+                    name: "Firmware Refresh",
+                    cmd: "sudo fwupdmgr refresh",
+                    color: Color::BrightGreen,
+                },
+                CommandInfo {
+                    name: "Firmware Update",
+                    cmd: "sudo fwupdmgr update",
+                    color: Color::BrightGreen,
+                },
             ],
         },
         UpdateSection {
             name: "HackerOS Update",
             commands: vec![
-                CommandInfo { name: "HackerOS Script", cmd: "/usr/share/HackerOS/Scripts/Bin/Update-usrshare.sh", color: Color::Magenta },
+                CommandInfo {
+                    name: "HackerOS Script",
+                    cmd: "/usr/share/HackerOS/Scripts/Bin/Update-usrshare.sh",
+                    color: Color::Magenta,
+                },
             ],
         },
     ];
@@ -79,7 +116,6 @@ fn main() -> io::Result<()> {
     // Process each update section
     for section in update_sections {
         print_section_header(&section.name);
-
         let total_steps = section.commands.len() as u64 * 100;
         let pb = multi_pb.add(ProgressBar::new(total_steps));
         pb.set_style(
@@ -95,13 +131,11 @@ fn main() -> io::Result<()> {
 
         for cmd_info in section.commands {
             pb.set_message(format!("{}", cmd_info.name.bright_white().bold()));
-
             // Simulate progress
             for _ in 0..100 {
                 pb.inc(1);
                 thread::sleep(Duration::from_millis(20));
             }
-
             let spinner = multi_pb.add(ProgressBar::new_spinner());
             spinner.set_style(
                 ProgressStyle::with_template("{spinner:.green} {msg}")
@@ -112,25 +146,22 @@ fn main() -> io::Result<()> {
             spinner.enable_steady_tick(Duration::from_millis(40));
 
             let output = Command::new("sh")
-            .arg("-c")
-            .arg(cmd_info.cmd)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+                .arg("-c")
+                .arg(cmd_info.cmd)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output();
 
             spinner.finish_and_clear();
-
             match output {
                 Ok(output) => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                     let success = output.status.success();
-
                     logs.push((cmd_info.name.to_string(), stdout.clone(), true));
                     if !stderr.is_empty() {
                         logs.push((cmd_info.name.to_string(), stderr.clone(), false));
                     }
-
                     print_command_result(&cmd_info.name, success, cmd_info.color);
                 }
                 Err(e) => {
@@ -148,7 +179,6 @@ fn main() -> io::Result<()> {
     loop {
         print_menu();
         io::stdout().flush()?;
-
         if let Event::Key(key_event) = event::read()? {
             match key_event.code {
                 KeyCode::Char('e') | KeyCode::Char('E') => {
@@ -227,8 +257,8 @@ fn print_menu() {
     println!("{}", format!("{}", "╒".to_string() + &"═".repeat(HEADER_WIDTH - 2) + &"╕".bright_cyan().bold()));
     println!("{}", format!("│{:^width$}│", "Update Process Completed", width = HEADER_WIDTH - 2).white().bold().on_bright_black());
     println!("{}", format!("{}", "├".to_string() + &"─".repeat(HEADER_WIDTH - 2) + &"┤".bright_cyan().bold()));
-    println!("{}", format!("│{:^width$}│", "(E)xit  (S)hutdown  (R)eboot", width = HEADER_WIDTH - 2).bright_yellow().bold());
-    println!("{}", format!("│{:^width$}│", "(L)og Out  (T)ry Again  (H) Show Logs", width = HEADER_WIDTH - 2).bright_yellow().bold());
+    println!("{}", format!("│{:^width$}│", "(E)xit (S)hutdown (R)eboot", width = HEADER_WIDTH - 2).bright_yellow().bold());
+    println!("{}", format!("│{:^width$}│", "(L)og Out (T)ry Again (H) Show Logs", width = HEADER_WIDTH - 2).bright_yellow().bold());
     println!("{}", format!("{}", "╘".to_string() + &"═".repeat(HEADER_WIDTH - 2) + &"╛".bright_cyan().bold()));
     println!("{}", "Select an option:".white().italic().bold());
 }
@@ -261,7 +291,7 @@ fn print_action(message: &str, color: Color) {
 
 fn get_section_color(name: &str) -> Color {
     match name {
-        "DNF System Update" => Color::BrightMagenta,
+        "APT System Update" => Color::BrightMagenta,
         "Flatpak Update" => Color::BrightYellow,
         "Snap Update" => Color::BrightBlue,
         "Firmware Update" => Color::BrightGreen,
