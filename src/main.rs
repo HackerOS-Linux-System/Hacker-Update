@@ -9,188 +9,263 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::fs;
+
+// Constants for styling
+const HEADER_WIDTH: usize = 60;
+const SPINNER_TICK_CHARS: &str = "⣾⣷⣯⣟⡿⢿⣻⣽";
+const PROGRESS_BAR_CHARS: &str = "█▉▊▋▌▍▎▏  ";
+
+// Structure to hold command details
+struct CommandInfo {
+    name: &'static str,
+    cmd: &'static str,
+    color: Color,
+}
+
+// Structure to manage update sections
+struct UpdateSection {
+    name: &'static str,
+    commands: Vec<CommandInfo>,
+}
 
 fn main() -> io::Result<()> {
-    // Enter alternate screen and enable raw mode for key input
+    // Initialize terminal
     execute!(io::stdout(), EnterAlternateScreen)?;
     enable_raw_mode()?;
-    // Print stylized header with gradient-like effect
-    println!("{}", "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓".bright_green().bold());
-    println!("{}", "┃ Hacker-Update ┃".bright_cyan().bold().on_bright_black());
-    println!("{}", "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛".bright_green().bold());
-    println!("{}", " Initializing system updates...".bright_blue().italic());
-    println!();
-    // Define update commands with associated colors for visual distinction
-    let update_commands = vec![
-        ("DNF System Update", vec![
-            ("sudo /usr/lib/HackerOS/dnf update -y", Color::BrightMagenta),
-         ("sudo /usr/lib/HackerOS/dnf upgrade -y", Color::BrightMagenta),
-         ("sudo /usr/lib/HackerOS/dnf autoremove -y", Color::BrightMagenta),
-        ]),
-        ("Flatpak Update", vec![("flatpak update -y", Color::BrightYellow)]),
-        ("Snap Update", vec![("sudo snap refresh", Color::BrightBlue)]),
-        ("Firmware Update", vec![
-            ("sudo fwupdmgr refresh", Color::BrightGreen),
-         ("sudo fwupdmgr update", Color::BrightGreen),
-        ]),
+
+    // Display stylized header
+    print_header();
+
+    // Define update sections
+    let update_sections = vec![
+        UpdateSection {
+            name: "DNF System Update",
+            commands: vec![
+                CommandInfo { name: "DNF Update", cmd: "sudo /usr/lib/HackerOS/dnf update -y", color: Color::BrightMagenta },
+                CommandInfo { name: "DNF Upgrade", cmd: "sudo /usr/lib/HackerOS/dnf upgrade -y", color: Color::BrightMagenta },
+                CommandInfo { name: "DNF Autoremove", cmd: "sudo /usr/lib/HackerOS/dnf autoremove -y", color: Color::BrightMagenta },
+            ],
+        },
+        UpdateSection {
+            name: "Flatpak Update",
+            commands: vec![
+                CommandInfo { name: "Flatpak Update", cmd: "flatpak update -y", color: Color::BrightYellow },
+            ],
+        },
+        UpdateSection {
+            name: "Snap Update",
+            commands: vec![
+                CommandInfo { name: "Snap Refresh", cmd: "sudo snap refresh", color: Color::BrightBlue },
+            ],
+        },
+        UpdateSection {
+            name: "Firmware Update",
+            commands: vec![
+                CommandInfo { name: "Firmware Refresh", cmd: "sudo fwupdmgr refresh", color: Color::BrightGreen },
+                CommandInfo { name: "Firmware Update", cmd: "sudo fwupdmgr update", color: Color::BrightGreen },
+            ],
+        },
+        UpdateSection {
+            name: "HackerOS Update",
+            commands: vec![
+                CommandInfo { name: "HackerOS Script", cmd: "/usr/share/HackerOS/Scripts/Bin/Update-usrshare.sh", color: Color::Magenta },
+            ],
+        },
     ];
-    // Store logs
-    let mut logs: Vec<String> = Vec::new();
-    // Initialize MultiProgress for concurrent progress bars
+
+    let mut logs: Vec<(String, String, bool)> = Vec::new();
     let multi_pb = MultiProgress::new();
-    // Run each update command with enhanced progress bar
-    for (update_name, commands) in update_commands {
-        println!("{}", format!(" Starting {} ", update_name).white().bold().on_color(update_name_color(update_name)));
-        let pb = multi_pb.add(ProgressBar::new(100));
+
+    // Process each update section
+    for section in update_sections {
+        print_section_header(&section.name);
+
+        let total_steps = section.commands.len() as u64 * 100;
+        let pb = multi_pb.add(ProgressBar::new(total_steps));
         pb.set_style(
-            ProgressStyle::default_bar()
-            .template("{spinner:.cyan} [{elapsed_precise}] {bar:50.green/blue} {msg} {percent:>3}%")
+            ProgressStyle::with_template(
+                "{prefix:.bold.dim} {spinner:.cyan/blue} [{bar:40.cyan/blue}] {percent}% | {msg} | ETA: {eta_precise}"
+            )
             .unwrap()
-            .progress_chars("█▉▊▋▌▍▎▏ ")
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈"),
+            .progress_chars(PROGRESS_BAR_CHARS)
+            .tick_chars(SPINNER_TICK_CHARS),
         );
-        for (_i, (cmd, color)) in commands.iter().enumerate() {
-            pb.set_message(format!("{}", cmd.color(*color).bold()).to_string());
+        pb.set_prefix(format!("{} ", section.name));
+        pb.enable_steady_tick(Duration::from_millis(50));
+
+        for cmd_info in section.commands {
+            pb.set_message(format!("{}", cmd_info.name.bright_white().bold()));
+
+            // Simulate progress
+            for _ in 0..100 {
+                pb.inc(1);
+                thread::sleep(Duration::from_millis(20));
+            }
+
+            let spinner = multi_pb.add(ProgressBar::new_spinner());
+            spinner.set_style(
+                ProgressStyle::with_template("{spinner:.green} {msg}")
+                .unwrap()
+                .tick_chars(SPINNER_TICK_CHARS),
+            );
+            spinner.set_message(format!("Executing: {}", cmd_info.name));
+            spinner.enable_steady_tick(Duration::from_millis(40));
+
             let output = Command::new("sh")
             .arg("-c")
-            .arg(cmd)
+            .arg(cmd_info.cmd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
+
+            spinner.finish_and_clear();
+
             match output {
                 Ok(output) => {
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    logs.push(format!("{} Output:\n{}", cmd, stdout));
+                    let success = output.status.success();
+
+                    logs.push((cmd_info.name.to_string(), stdout.clone(), true));
                     if !stderr.is_empty() {
-                        logs.push(format!("{} Errors:\n{}", cmd, stderr));
+                        logs.push((cmd_info.name.to_string(), stderr.clone(), false));
                     }
-                    if !output.status.success() {
-                        println!("{}", format!(" Error running {} ", cmd).white().bold().on_bright_red());
-                    } else {
-                        println!("{}", format!(" Completed {} ", cmd).white().bold().on_bright_green());
-                    }
+
+                    print_command_result(&cmd_info.name, success, cmd_info.color);
                 }
                 Err(e) => {
-                    logs.push(format!("Failed to execute {}: {}", cmd, e));
-                    println!("{}", format!(" Failed to execute {}: {} ", cmd, e).white().bold().on_bright_red());
+                    logs.push((cmd_info.name.to_string(), format!("Failed: {}", e), false));
+                    print_command_result(&cmd_info.name, false, cmd_info.color);
                 }
             }
-            pb.inc(100 / commands.len() as u64);
-            thread::sleep(Duration::from_millis(200));
         }
-        pb.finish_with_message(format!(" {} completed ", update_name).white().bold().to_string());
+        pb.finish_with_message(format!("{} completed", section.name.bright_green().bold()));
         println!();
+        thread::sleep(Duration::from_millis(300));
     }
-    // Run the custom script
-    let script_path = "/usr/share/HackerOS/Scripts/Bin/Update-usrshare.sh";
-    if fs::metadata(script_path).is_ok() {
-        println!("{}", " Starting custom update script ".white().bold().on_bright_purple());
-        let pb = multi_pb.add(ProgressBar::new_spinner());
-        pb.set_style(
-            ProgressStyle::default_spinner()
-            .template("{spinner:.purple} {msg} [{elapsed_precise}]")
-            .unwrap()
-            .tick_chars("⣾⣷⣯⣟⡿⢿⣻⣽"),
-        );
-        pb.set_message("Executing Update-usrshare.sh".to_string());
-        let output = Command::new("sh")
-        .arg(script_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
-        match output {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                logs.push(format!("Update-usrshare.sh Output:\n{}", stdout));
-                if !stderr.is_empty() {
-                    logs.push(format!("Update-usrshare.sh Errors:\n{}", stderr));
-                }
-                if !output.status.success() {
-                    println!("{}", " Error running custom script ".white().bold().on_bright_red());
-                } else {
-                    println!("{}", " Completed custom script ".white().bold().on_bright_green());
-                }
-            }
-            Err(e) => {
-                logs.push(format!("Failed to execute script: {}", e));
-                println!("{}", format!(" Failed to execute script: {} ", e).white().bold().on_bright_red());
-            }
-        }
-        pb.finish_with_message(" Script execution completed ".to_string());
-    } else {
-        println!("{}", " Custom script not found ".white().bold().on_bright_red());
-        logs.push("Custom script not found!".to_string());
-    }
-    // Display stylized menu with gradient borders
+
+    // Interactive menu
     loop {
-        println!();
-        println!("{}", "╔════════════════════════════════════════════════╗".bright_cyan().bold());
-        println!("{}", "║ Update Completed! ║".white().bold().on_bright_black());
-        println!("{}", "╠════════════════════════════════════════════════╣".bright_cyan().bold());
-        println!("{}", "║ (E)xit (S)hutdown (R)eboot ║".bright_yellow().bold());
-        println!("{}", "║ (L)og Out (T)ry again (S)ow logs ║".bright_yellow().bold());
-        println!("{}", "╚════════════════════════════════════════════════╝".bright_cyan().bold());
-        println!("{}", " Select an option: ".white().italic());
+        print_menu();
         io::stdout().flush()?;
+
         if let Event::Key(key_event) = event::read()? {
             match key_event.code {
                 KeyCode::Char('e') | KeyCode::Char('E') => {
-                    println!("{}", " Exiting ".white().bold().on_bright_blue());
+                    print_action("Exiting Update Utility", Color::BrightBlue);
                     break;
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    println!("{}", " Shutting down ".white().bold().on_bright_blue());
+                    print_action("Shutting Down System", Color::BrightBlue);
                     let _ = Command::new("sudo").arg("poweroff").output();
                     break;
                 }
                 KeyCode::Char('r') | KeyCode::Char('R') => {
-                    println!("{}", " Rebooting ".white().bold().on_bright_blue());
+                    print_action("Rebooting System", Color::BrightBlue);
                     let _ = Command::new("sudo").arg("reboot").output();
                     break;
                 }
                 KeyCode::Char('l') | KeyCode::Char('L') => {
-                    println!("{}", " Logging out ".white().bold().on_bright_blue());
+                    print_action("Logging Out", Color::BrightBlue);
                     let _ = Command::new("pkill").arg("-u").arg(&whoami::username()).output();
                     break;
                 }
                 KeyCode::Char('t') | KeyCode::Char('T') => {
-                    println!("{}", " Restarting updates ".white().bold().on_bright_blue());
+                    print_action("Restarting Update Process", Color::BrightBlue);
                     let _ = execute!(io::stdout(), LeaveAlternateScreen)?;
                     disable_raw_mode()?;
                     main()?;
                     return Ok(());
                 }
                 KeyCode::Char('h') | KeyCode::Char('H') => {
-                    println!("{}", " Update Logs ".white().bold().on_bright_cyan());
-                    println!("{}", "╔════════════════════════════════════════════════╗".bright_cyan().bold());
-                    for log in &logs {
-                        println!("{}", format!("║ {} ", log).white().on_bright_black());
-                    }
-                    println!("{}", "╚════════════════════════════════════════════════╝".bright_cyan().bold());
+                    print_logs(&logs);
                 }
                 _ => {
-                    println!("{}", " Invalid option, try again. ".white().bold().on_bright_red());
+                    print_action("Invalid Option", Color::BrightRed);
                 }
             }
         }
     }
+
     // Cleanup
     execute!(io::stdout(), LeaveAlternateScreen)?;
     disable_raw_mode()?;
     Ok(())
 }
 
-// Helper function to assign background colors based on update type
-fn update_name_color(update_name: &str) -> Color {
-    match update_name {
+// Helper functions
+fn print_header() {
+    let title = "HackerOS Update Utility";
+    let _padding = (HEADER_WIDTH - title.len()) / 2; // Unused but kept for potential future use
+    println!("{}", "═".repeat(HEADER_WIDTH).bright_green().bold());
+    println!("{}", format!("║{:^width$}║", title.bright_cyan().bold(), width = HEADER_WIDTH - 2).on_bright_black());
+    println!("{}", "═".repeat(HEADER_WIDTH).bright_green().bold());
+    println!("{}", "Initializing updates...".bright_blue().italic().bold());
+    println!();
+}
+
+fn print_section_header(name: &str) {
+    let padding = (HEADER_WIDTH - name.len() - 4) / 2;
+    println!(
+        "{}",
+        format!("╠{} {} {}{}╣", "═".repeat(padding), name, "═".repeat(padding), if (name.len() + 4) % 2 == 1 { "═" } else { "" })
+            .white().bold().on_color(get_section_color(name))
+    );
+    println!();
+}
+
+fn print_command_result(name: &str, success: bool, color: Color) {
+    let status = if success { "Completed" } else { "Failed" };
+    let _status_color = if success { Color::BrightGreen } else { Color::BrightRed }; // Unused but kept for potential future use
+    println!(
+        "{}",
+        format!("╠═ {} {} ═╝", status, name).white().bold().on_color(color)
+    );
+}
+
+fn print_menu() {
+    println!("{}", format!("{}", "╒".to_string() + &"═".repeat(HEADER_WIDTH - 2) + &"╕".bright_cyan().bold()));
+    println!("{}", format!("│{:^width$}│", "Update Process Completed", width = HEADER_WIDTH - 2).white().bold().on_bright_black());
+    println!("{}", format!("{}", "├".to_string() + &"─".repeat(HEADER_WIDTH - 2) + &"┤".bright_cyan().bold()));
+    println!("{}", format!("│{:^width$}│", "(E)xit  (S)hutdown  (R)eboot", width = HEADER_WIDTH - 2).bright_yellow().bold());
+    println!("{}", format!("│{:^width$}│", "(L)og Out  (T)ry Again  (H) Show Logs", width = HEADER_WIDTH - 2).bright_yellow().bold());
+    println!("{}", format!("{}", "╘".to_string() + &"═".repeat(HEADER_WIDTH - 2) + &"╛".bright_cyan().bold()));
+    println!("{}", "Select an option:".white().italic().bold());
+}
+
+fn print_logs(logs: &[(String, String, bool)]) {
+    println!("{}", format!("{}", "╒".to_string() + &"═".repeat(HEADER_WIDTH - 2) + &"╕".bright_cyan().bold()));
+    println!("{}", format!("│{:^width$}│", "Update Logs", width = HEADER_WIDTH - 2).white().bold().on_bright_cyan());
+    println!("{}", format!("{}", "├".to_string() + &"─".repeat(HEADER_WIDTH - 2) + &"┤".bright_cyan().bold()));
+    for (name, log, is_stdout) in logs {
+        let log_type = if *is_stdout { "Output" } else { "Error" };
+        let log_color = if *is_stdout { Color::White } else { Color::BrightRed };
+        let max_len = HEADER_WIDTH - 10;
+        let truncated_log = if log.len() > max_len { &log[..max_len] } else { log };
+        println!(
+            "{}",
+            format!("│ {}: {} {}", log_type, name, truncated_log).color(log_color).on_bright_black()
+        );
+    }
+    println!("{}", format!("{}", "╘".to_string() + &"═".repeat(HEADER_WIDTH - 2) + &"╛".bright_cyan().bold()));
+    println!();
+}
+
+fn print_action(message: &str, color: Color) {
+    println!(
+        "{}",
+        format!("╠═ {} ═╝", message).white().bold().on_color(color)
+    );
+    thread::sleep(Duration::from_millis(200));
+}
+
+fn get_section_color(name: &str) -> Color {
+    match name {
         "DNF System Update" => Color::BrightMagenta,
         "Flatpak Update" => Color::BrightYellow,
         "Snap Update" => Color::BrightBlue,
         "Firmware Update" => Color::BrightGreen,
+        "HackerOS Update" => Color::Magenta,
         _ => Color::BrightBlack,
     }
 }
-
