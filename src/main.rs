@@ -108,17 +108,6 @@ fn main() -> io::Result<()> {
                 },
             ],
         },
-        UpdateSection {
-            name: "HackerOS Update",
-            commands: vec![
-                CommandInfo {
-                    name: "HackerOS Script",
-                    cmd: "/usr/share/HackerOS/Scripts/Bin/Update-usrshare.sh",
-                    color: Color::Magenta,
-                    list_cmd: None,
-                },
-            ],
-        },
     ];
 
     let mut logs: Vec<(String, String, bool)> = Vec::new();
@@ -151,14 +140,12 @@ fn main() -> io::Result<()> {
                 );
                 list_spinner.set_message(format!("Listing updates for {}...", cmd_info.name));
                 list_spinner.enable_steady_tick(Duration::from_millis(40));
-
                 let list_output = Command::new("sh")
-                .arg("-c")
-                .arg(list_cmd)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output();
-
+                    .arg("-c")
+                    .arg(list_cmd)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output();
                 list_spinner.finish_and_clear();
                 match list_output {
                     Ok(o) => {
@@ -171,11 +158,11 @@ fn main() -> io::Result<()> {
                             );
                             let mut count = 0;
                             for line in list_stdout.lines().filter(|l| !l.trim().is_empty() && !l.contains("Listing...") && !l.contains("All snaps up to date.")) {
-                                println!("  {:2}. {}", count + 1, line.bright_white());
+                                println!(" {:2}. {}", count + 1, line.bright_white());
                                 count += 1;
                             }
                             if count == 0 {
-                                println!("{}", "  None".bright_white());
+                                println!("{}", " None".bright_white());
                             }
                         } else if !list_stderr.is_empty() {
                             println!("{}", format!("Error listing updates: {}", list_stderr).bright_red());
@@ -196,26 +183,23 @@ fn main() -> io::Result<()> {
             let spinner = multi_pb.add(ProgressBar::new_spinner());
             spinner.set_style(
                 ProgressStyle::with_template("{spinner:.green} {msg:.white}")
-                .unwrap()
-                .tick_chars(SPINNER_TICK_CHARS),
+                    .unwrap()
+                    .tick_chars(SPINNER_TICK_CHARS),
             );
             spinner.set_message(format!("Executing: {}", cmd_info.name));
             spinner.enable_steady_tick(Duration::from_millis(40));
 
             // Spawn the command
             let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(cmd_info.cmd)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
+                .arg("-c")
+                .arg(cmd_info.cmd)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
             let stdout_reader = BufReader::new(child.stdout.take().unwrap());
             let stderr_reader = BufReader::new(child.stderr.take().unwrap());
-
             let stdout_lines = Arc::new(Mutex::new(Vec::<String>::new()));
             let stderr_lines = Arc::new(Mutex::new(Vec::<String>::new()));
-
             let stdout_lines_clone = Arc::clone(&stdout_lines);
             let stderr_lines_clone = Arc::clone(&stderr_lines);
             let cmd_color = cmd_info.color;
@@ -227,7 +211,6 @@ fn main() -> io::Result<()> {
                     stdout_lines_clone.lock().unwrap().push(line);
                 }
             });
-
             let stderr_handle: JoinHandle<()> = thread::spawn(move || {
                 for line in stderr_reader.lines().flatten() {
                     println!("{}", line.bright_red());
@@ -242,17 +225,14 @@ fn main() -> io::Result<()> {
             // Wait for child and get status
             let status = child.wait()?;
             let success = status.success();
-
             let stdout = stdout_lines.lock().unwrap().join("\n");
             let stderr = stderr_lines.lock().unwrap().join("\n");
-
             spinner.finish_with_message(format!(
                 "{}: {}",
                 cmd_info.name,
                 if success { "Completed".bright_green().bold() } else { "Failed".bright_red().bold() }
             ));
             println!();
-
             logs.push((cmd_info.name.to_string(), stdout.clone(), true));
             if !stderr.is_empty() {
                 logs.push((cmd_info.name.to_string(), stderr.clone(), false));
@@ -337,8 +317,8 @@ fn print_menu() {
     println!("{}", format!("┃{:^width$}┃", "Update Process Completed".bright_green().bold(), width = HEADER_WIDTH - 2).on_bright_black());
     println!("{}", format!("{}", "┣".to_string() + &"━".repeat(HEADER_WIDTH - 2) + &"┫".bright_cyan().bold()));
     println!("{}", format!("┃{:^width$}┃", "Choose an action:", width = HEADER_WIDTH - 2).bright_white().bold());
-    println!("{}", format!("┃{:^width$}┃", "(E)xit  (S)hutdown  (R)eboot", width = HEADER_WIDTH - 2).bright_yellow());
-    println!("{}", format!("┃{:^width$}┃", "(L)og Out  (T)ry Again  (H) Show Logs", width = HEADER_WIDTH - 2).bright_yellow());
+    println!("{}", format!("┃{:^width$}┃", "(E)xit (S)hutdown (R)eboot", width = HEADER_WIDTH - 2).bright_yellow());
+    println!("{}", format!("┃{:^width$}┃", "(L)og Out (T)ry Again (H) Show Logs", width = HEADER_WIDTH - 2).bright_yellow());
     println!("{}", format!("{}", "┗".to_string() + &"━".repeat(HEADER_WIDTH - 2) + &"┛".bright_cyan().bold()));
     println!("{}", format!("{:^width$}", "Select an option:".white().italic().bold(), width = HEADER_WIDTH));
 }
@@ -353,7 +333,7 @@ fn print_logs(logs: &[(String, String, bool)]) {
         if !log.trim().is_empty() {
             println!("{}", format!("┃ {} for {}:", log_type, name).bold().color(log_color));
             for line in log.lines() {
-                println!("{}", format!("┃   {}", line).color(log_color));
+                println!("{}", format!("┃ {}", line).color(log_color));
             }
             println!("{}", format!("{}", "┣".to_string() + &"━".repeat(HEADER_WIDTH - 2) + &"┫".bright_black()));
         }
@@ -376,7 +356,6 @@ fn get_section_color(name: &str) -> Color {
         "Flatpak Update" => Color::BrightYellow,
         "Snap Update" => Color::BrightBlue,
         "Firmware Update" => Color::BrightGreen,
-        "HackerOS Update" => Color::Magenta,
         _ => Color::BrightBlack,
     }
 }
