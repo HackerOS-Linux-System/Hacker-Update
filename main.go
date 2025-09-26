@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -14,51 +17,80 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Definicje stylów z rozszerzoną paletą kolorów
+// Definicje stylów z paletą neonowych kolorów i efektami cyberpunkowymi
 var (
-	// Styl nagłówka z neonowym kolorem
+	// Styl nagłówka z neonowym cyan i magenta border
 	headerStyle = lipgloss.NewStyle().
 	Bold(true).
-	Foreground(lipgloss.AdaptiveColor{Light: "#00FFFF", Dark: "#00B7EB"}). // Neon cyan
-	Background(lipgloss.Color("#0A0A23")).                                 // Dark navy
+	Foreground(lipgloss.AdaptiveColor{Light: "#00FFFF", Dark: "#00B7EB"}).
+	Background(lipgloss.Color("#0A0A23")).
 	Padding(2, 4).
 	Align(lipgloss.Center).
 	Border(lipgloss.DoubleBorder(), true).
-	BorderForeground(lipgloss.AdaptiveColor{Light: "#FF00FF", Dark: "#FF55FF"}) // Neon magenta
+	BorderForeground(lipgloss.AdaptiveColor{Light: "#FF00FF", Dark: "#FF55FF"})
 
-	// Styl paneli z cieniem
+	// Styl paneli z neon green border i dark background
 	panelStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder(), true).
-	BorderForeground(lipgloss.Color("#00FF7F")). // Neon spring green
+	BorderForeground(lipgloss.Color("#00FF7F")).
 	Padding(1, 3).
 	Background(lipgloss.Color("#0F0F23")).
 	Width(120).
-	Margin(0, 0, 1, 0) // Dodaj cień poprzez margines
+	Margin(1, 1)
 
-	// Styl błędów z pulsującym czerwonym
+	// Styl błędów z pulsującym neon red
 	errorStyle = lipgloss.NewStyle().
 	Border(lipgloss.ThickBorder(), true).
-	BorderForeground(lipgloss.Color("#FF5555")). // Neon red
+	BorderForeground(lipgloss.Color("#FF5555")).
 	Padding(1, 2).
 	Background(lipgloss.Color("#2A1A1A")).
 	Foreground(lipgloss.Color("#FF5555"))
 
-	// Styl sukcesu z zielonym glow
+	// Styl sukcesu z neon green glow
 	successStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder(), true).
-	BorderForeground(lipgloss.Color("#55FF55")). // Neon green
+	BorderForeground(lipgloss.Color("#55FF55")).
 	Padding(1, 2).
 	Foreground(lipgloss.Color("#55FF55"))
 
-	// Dodatkowe style dla kolorów
-	warningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF55")) // Neon yellow
-	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#55FFFF")) // Neon cyan
+	// Dodatkowe style neonowe
+	warningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF55"))
+	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#55FFFF"))
 
-	// Style dla sekcji z więcej kolorami
-	aptStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF55FF")) // Neon magenta
-	flatpakStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")) // Neon gold yellow
-	snapStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")) // Neon cyan
-	fwStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#32CD32")) // Neon lime green
+	// Style dla sekcji z neonowymi kolorami
+	aptStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF55FF"))
+	flatpakStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))
+	snapStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF"))
+	fwStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#32CD32"))
+
+	// Styl menu z neon gold border
+	menuStyle = lipgloss.NewStyle().
+	Border(lipgloss.DoubleBorder(), true).
+	BorderForeground(lipgloss.Color("#FFD700")).
+	Padding(2, 3).
+	Background(lipgloss.Color("#1A1A2E")).
+	Width(100).
+	Align(lipgloss.Center)
+
+	// Styl dla glitch effect
+	glitchStyle = lipgloss.NewStyle().
+	Bold(true).
+	Italic(true).
+	Foreground(lipgloss.Color("#FF00FF")).
+	Background(lipgloss.Color("#000000"))
+
+	// Styl dla separatorów z neon linami Unicode
+	separatorStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#00FFFF")).
+	Render(strings.Repeat("━", 100))
+
+	// Unicode progress bar style
+	progressBarStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#55FF55")).
+	Background(lipgloss.Color("#1A1A2E"))
+
+	// Unicode blocks dla postępu
+	unicodeBlocks = []string{"░", "▒", "▓", "█"}
 )
 
 // Struktura poleceń
@@ -104,22 +136,23 @@ var sections = []Section{
 	},
 }
 
-// Funkcja nagłówka z neonowym efektem
+// Funkcja nagłówka z neonowym efektem i glitch symulacją
 func printHeader() string {
-	title := lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.AdaptiveColor{Light: "#FF00FF", Dark: "#00FFFF"}).
-	Render("HackerOS Update Utility v1.1.0")
+	title := glitchStyle.Render("HACKER UPDATE")
 	subtitle := lipgloss.NewStyle().
 	Italic(true).
-	Foreground(lipgloss.Color("#7FFFD4")). // Neon aquamarine
-	Render("Activating Enhanced Cyber Update Protocol...")
-	content := lipgloss.JoinVertical(lipgloss.Center, title, "\n", subtitle)
+	Foreground(lipgloss.Color("#7FFFD4")).
+	Render("Updating HackerOS")
+	version := lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FFFF55")).
+	Render("Hacker Update - Version 0.9")
+	content := lipgloss.JoinVertical(lipgloss.Center, title, "\n", subtitle, "\n", version)
 	return headerStyle.Render(content)
 }
 
-// Funkcja sekcji z kolorowym tłem
+// Funkcja sekcji z kolorowym tłem i neon border
 func printSectionHeader(name string) string {
+	icon := getSectionIcon(name)
 	header := lipgloss.NewStyle().
 	Bold(true).
 	Foreground(lipgloss.Color("#E0FFFF")).
@@ -127,35 +160,52 @@ func printSectionHeader(name string) string {
 	Padding(1, 4).
 	Border(lipgloss.DoubleBorder(), true).
 	BorderForeground(getSectionColor(name)).
-	Render(strings.ToUpper(name))
+	Render(icon + " " + strings.ToUpper(name))
 	return header
+}
+
+// Pobieranie ikony Unicode sekcji
+func getSectionIcon(name string) string {
+	switch name {
+		case "APT System Update":
+			return "┃┃"
+		case "Flatpak Update":
+			return "┣┫"
+		case "Snap Update":
+			return "┳┳"
+		case "Firmware Update":
+			return "┻┻"
+		default:
+			return "══"
+	}
 }
 
 // Pobieranie koloru sekcji
 func getSectionColor(name string) lipgloss.Color {
 	switch name {
 		case "APT System Update":
-			return lipgloss.Color("#FF55FF") // Neon magenta
+			return lipgloss.Color("#FF55FF")
 		case "Flatpak Update":
-			return lipgloss.Color("#FFD700") // Neon gold
+			return lipgloss.Color("#FFD700")
 		case "Snap Update":
-			return lipgloss.Color("#00FFFF") // Neon cyan
+			return lipgloss.Color("#00FFFF")
 		case "Firmware Update":
-			return lipgloss.Color("#32CD32") // Neon lime
+			return lipgloss.Color("#32CD32")
 		default:
 			return lipgloss.Color("#FFFFFF")
 	}
 }
 
-// Funkcja wyświetlania tabeli statusów z ikonami
+// Funkcja wyświetlania tabeli statusów z ikonami i kolorami, Unicode icons
 func showStatusTable(logs []string) string {
 	columns := []table.Column{
-		{Title: "Icon", Width: 5},
+		{Title: "▌", Width: 3},
 		{Title: "Section", Width: 20},
 		{Title: "Command", Width: 20},
 		{Title: "Status", Width: 15},
-		{Title: "Output Snippet", Width: 55},
+		{Title: "Output", Width: 55},
 	}
+
 	rows := []table.Row{}
 	for _, log := range logs {
 		parts := strings.SplitN(log, "|", 4)
@@ -169,30 +219,34 @@ func showStatusTable(logs []string) string {
 			rows = append(rows, table.Row{icon, parts[0], parts[1], parts[2], style.Render(parts[3])})
 		}
 	}
+
 	t := table.New(
 		table.WithColumns(columns),
 		       table.WithRows(rows),
 		       table.WithFocused(true),
 		       table.WithHeight(len(rows)),
 	)
+
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("#00FFFF")).
 	Background(lipgloss.Color("#2A2A4E")).
 	Bold(true).
-	Foreground(lipgloss.Color("#FFD700")) // Gold for headers
+	Foreground(lipgloss.Color("#FFD700"))
 	s.Selected = s.Selected.
-	Foreground(lipgloss.Color("#FF69B4")). // Hot pink for selected
-	Background(lipgloss.Color("#1A1A2E"))
+	Foreground(lipgloss.Color("#FF69B4")).
+	Background(lipgloss.Color("#1A1A2E")).
+	Bold(true)
 	t.SetStyles(s)
+
 	return panelStyle.Render(t.View())
 }
 
-// Funkcja uruchamiania komendy z sudo
-func runCommand(cmd string, color lipgloss.Style) (string, string, bool) {
+// Funkcja uruchamiania komendy z sudo i obsługą przerwania
+func runCommand(ctx context.Context, cmd string, color lipgloss.Style) (string, string, bool) {
 	args := strings.Fields(cmd)
-	command := exec.Command(args[0], args[1:]...)
+	command := exec.CommandContext(ctx, args[0], args[1:]...)
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
 	command.Stdout = stdout
 	command.Stderr = stderr
@@ -203,12 +257,15 @@ func runCommand(cmd string, color lipgloss.Style) (string, string, bool) {
 		snippet = snippet[:50] + "..."
 	}
 	if err != nil {
+		if ctx.Err() == context.Canceled {
+			return "", errorStyle.Render("Command interrupted by user"), false
+		}
 		return snippet, errorStyle.Render(stderr.String()), false
 	}
 	return snippet, "", true
 }
 
-// Model Bubble Tea dla paska postępu
+// Ulepszony Model Bubble Tea dla paska postępu z Unicode i animacją
 type progressModel struct {
 	progress progress.Model
 	spinner  spinner.Model
@@ -216,24 +273,30 @@ type progressModel struct {
 	cmd      string
 	percent  float64
 	done     bool
+	blockIdx int
+	ctx      context.Context
 }
 
-func newProgressModel() progressModel {
+func newProgressModel(ctx context.Context, section, cmd string) progressModel {
 	return progressModel{
 		progress: progress.New(
-			progress.WithScaledGradient("#FF00FF", "#00FFFF"), // Magenta to cyan gradient
-				       progress.WithWidth(80),
-				       progress.WithSolidFill("█"),
+			progress.WithScaledGradient("#FF00FF", "#00FFFF"),
+				       progress.WithWidth(60),
+				       progress.WithSolidFill(unicodeBlocks[3]),
 		),
 		spinner: spinner.New(
-			spinner.WithSpinner(spinner.Line),
-				     spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4500"))), // Orange red spinner
+			spinner.WithSpinner(spinner.MiniDot),
+				     spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4500"))),
 		),
+		section:  section,
+		cmd:      cmd,
+		blockIdx: 0,
+		ctx:      ctx,
 	}
 }
 
 func (m progressModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Batch(m.spinner.Tick, tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg{}
 	}))
 }
@@ -242,10 +305,18 @@ type tickMsg struct{}
 
 func (m progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
+		case tea.KeyMsg:
+			if msg.(tea.KeyMsg).String() == "ctrl+c" {
+				return m, tea.Quit
+			}
 		case tickMsg:
+			if m.ctx.Err() == context.Canceled {
+				return m, tea.Quit
+			}
 			if m.percent < 1.0 {
-				m.percent += 0.05 // Wolniejsza animacja dla lepszego efektu
-				return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+				m.percent += 0.02
+				m.blockIdx = int(m.percent*100/25) % len(unicodeBlocks)
+				return m, tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
 					return tickMsg{}
 				})
 			}
@@ -260,18 +331,16 @@ func (m progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m progressModel) View() string {
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-				       m.spinner.View(),
-				       " ",
-				infoStyle.Render(m.section+": "+m.cmd),
-				       " ",
-				m.progress.ViewAs(m.percent),
-				       " ",
-				warningStyle.Render(fmt.Sprintf("%.0f%%", m.percent*100)),
+	bar := m.progress.ViewAs(m.percent)
+	percent := fmt.Sprintf(" %3.0f%% ", m.percent*100)
+	return lipgloss.JoinVertical(lipgloss.Center,
+				     lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Render("▌ " + m.section + ": " + m.cmd + " ▐"),
+				     progressBarStyle.Render("[" + bar + "]"),
+				     warningStyle.Render(percent),
 	)
 }
 
-// Model Bubble Tea dla menu z animacjami
+// Model Bubble Tea dla menu z animacjami i Unicode
 type menuModel struct {
 	choices   []string
 	cursor    int
@@ -284,8 +353,8 @@ func initialMenuModel() menuModel {
 	return menuModel{
 		choices: []string{"Exit", "Shutdown", "Reboot", "Show Logs"},
 		spinner: spinner.New(
-			spinner.WithSpinner(spinner.Dot),
-				     spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF7F"))), // Spring green spinner
+			spinner.WithSpinner(spinner.MiniDot),
+				     spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF7F"))),
 		),
 		animating: true,
 	}
@@ -324,98 +393,160 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m menuModel) View() string {
 	s := strings.Builder{}
-	s.WriteString(panelStyle.Render(
+	s.WriteString(menuStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Center,
-				      successStyle.Render("Update Process Completed Successfully"),
-				      lipgloss.NewStyle().Foreground(lipgloss.Color("#E0FFFF")).Render("Select Your Next Action:"),
-				      lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF55")).Render("(E)xit | (S)hutdown | (R)eboot | (H) Show Logs"),
+				      successStyle.Render("Update Protocol Terminated Successfully"),
+				      lipgloss.NewStyle().Foreground(lipgloss.Color("#E0FFFF")).Render("Initiate Next Directive:"),
+				      lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF55")).Render("↑↓ Navigate | ↵ Execute"),
 		),
 	))
 	s.WriteString("\n")
 	if m.animating {
-		s.WriteString(m.spinner.View() + " Loading Options...\n")
+		s.WriteString(m.spinner.View() + " Scanning Neural Interface...\n\n")
 	}
 	for i, choice := range m.choices {
-		cursor := " "
+		cursor := "   "
 		if m.cursor == i {
-			cursor = "> "
+			cursor = "▶▶▶ "
 		}
 		color := lipgloss.Color("#FFFFFF")
 		if m.cursor == i {
-			color = lipgloss.Color("#55FF55") // Neon green for selected
+			color = lipgloss.Color("#55FF55")
 		}
-		s.WriteString(lipgloss.NewStyle().Foreground(color).Render(cursor + choice + "\n"))
+		s.WriteString(lipgloss.NewStyle().Foreground(color).Padding(0, 2).Render(cursor+choice+"\n"))
 	}
 	return s.String()
 }
 
-// Główna funkcja
+// Główna funkcja z obsługą Ctrl+C
 func main() {
+	// Utwórz kontekst z możliwością przerwania
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Kanał do przechwytywania sygnałów Ctrl+C
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Gorutyna do obsługi sygnału Ctrl+C
+	go func() {
+		<-sigChan
+		fmt.Println()
+		fmt.Println(errorStyle.Render("INTERRUPT DETECTED: Terminating Update Protocol"))
+		cancel()
+		time.Sleep(500 * time.Millisecond) // Krótka pauza dla wyświetlenia wiadomości
+		os.Exit(1)
+	}()
+
 	fmt.Println(printHeader())
+	fmt.Println(separatorStyle)
 	fmt.Println()
+
 	var logs []string
+
 	for _, section := range sections {
+		if ctx.Err() == context.Canceled {
+			return
+		}
 		fmt.Println(printSectionHeader(section.Name))
+		fmt.Println(separatorStyle)
+
 		for _, cmd := range section.Commands {
-			// Ładniejszy pasek postępu
-			pm := newProgressModel()
-			pm.section = section.Name
-			pm.cmd = cmd.Name
-			p := tea.NewProgram(pm)
-			go func(cmd Command) {
-				snippet, stderr, success := runCommand(cmd.Cmd, cmd.Color)
-				logStatus := "Success"
-				if !success {
-					logStatus = "Failed"
-				}
-				logs = append(logs, fmt.Sprintf("%s|%s|%s|%s", section.Name, cmd.Name, logStatus, snippet+stderr))
-			}(cmd)
-			if _, err := p.Run(); err != nil {
-				fmt.Println(errorStyle.Render("Error: " + err.Error()))
+			if ctx.Err() == context.Canceled {
+				return
+			}
+			pm := newProgressModel(ctx, section.Name, cmd.Name)
+			p := tea.NewProgram(pm, tea.WithContext(ctx))
+
+			// Uruchom komendę w gorutynie
+			logChan := make(chan struct {
+				snippet string
+				stderr  string
+				success bool
+			})
+			go func(cmd Command, sectionName string) {
+				snippet, stderr, success := runCommand(ctx, cmd.Cmd, cmd.Color)
+				logChan <- struct {
+					snippet string
+					stderr  string
+					success bool
+				}{snippet, stderr, success}
+			}(cmd, section.Name)
+
+			// Uruchom program bubbletea dla paska postępu
+			_, err := p.Run()
+			if err != nil {
+				fmt.Println(errorStyle.Render("SYSTEM ERROR: " + err.Error()))
 				os.Exit(1)
 			}
-			snippet, stderr, success := runCommand(cmd.Cmd, cmd.Color)
+			if ctx.Err() == context.Canceled {
+				return
+			}
+
+			// Odbierz wyniki komendy
+			result := <-logChan
+			snippet, stderr, success := result.snippet, result.stderr, result.success
+			logs = append(logs, fmt.Sprintf("%s|%s|%s|%s", section.Name, cmd.Name, func() string {
+				if success {
+					return "Success"
+				}
+				return "Failed"
+			}(), snippet+stderr))
+
 			fmt.Println(snippet)
 			if stderr != "" {
 				fmt.Println(stderr)
 			}
+
 			statusPanel := successStyle
 			if !success {
 				statusPanel = errorStyle
 			}
-			fmt.Println(statusPanel.Render(cmd.Name + ": " + func() string {
+			fmt.Println(statusPanel.Render("┌─ " + cmd.Name + " ─┐\n│ " + func() string {
 				if success {
-					return "Completed"
+					return "EXECUTED"
 				}
-				return "Failed"
-			}()))
+				return "ABORTED"
+			}() + " │\n└─────────────┘"))
 			fmt.Println()
 		}
-		fmt.Println(successStyle.Render(section.Name + " Completed Successfully"))
-		fmt.Println()
-		time.Sleep(500 * time.Millisecond)
+
+		fmt.Println(successStyle.Render("┌─ " + section.Name + " TERMINATED ─┐"))
+		fmt.Println(separatorStyle)
+		time.Sleep(300 * time.Millisecond)
 	}
-	// Wyświetlanie tabeli statusów
+
+	if ctx.Err() == context.Canceled {
+		return
+	}
+
+	fmt.Println(panelStyle.Render("NEURAL LOG MATRIX"))
 	fmt.Println(showStatusTable(logs))
-	fmt.Println()
-	// Menu z animacjami
-	p := tea.NewProgram(initialMenuModel())
+	fmt.Println(separatorStyle)
+
+	p := tea.NewProgram(initialMenuModel(), tea.WithContext(ctx))
 	m, err := p.Run()
 	if err != nil {
-		fmt.Println(errorStyle.Render("Error running menu: " + err.Error()))
+		fmt.Println(errorStyle.Render("INTERFACE ERROR: " + err.Error()))
 		os.Exit(1)
 	}
+
+	if ctx.Err() == context.Canceled {
+		return
+	}
+
 	model := m.(menuModel)
 	switch model.selected {
 		case "Exit":
-			fmt.Println(panelStyle.Render("Exiting Update Utility"))
+			fmt.Println(panelStyle.Render("DISCONNECTING FROM GRID"))
 		case "Shutdown":
-			fmt.Println(panelStyle.Render("Shutting Down System"))
-			runCommand("sudo poweroff", successStyle)
+			fmt.Println(panelStyle.Render("INITIATING SYSTEM PURGE"))
+			runCommand(ctx, "sudo poweroff", successStyle)
 		case "Reboot":
-			fmt.Println(panelStyle.Render("Rebooting System"))
-			runCommand("sudo reboot", successStyle)
+			fmt.Println(panelStyle.Render("REINITIALIZING CORE"))
+			runCommand(ctx, "sudo reboot", successStyle)
 		case "Show Logs":
+			fmt.Println(panelStyle.Render("ACCESSING ARCHIVE"))
 			fmt.Println(showStatusTable(logs))
 	}
 }
