@@ -109,10 +109,9 @@ var sections = []Section{
 	{
 		Name: "APT System Update",
 		Commands: []Command{
-			{"APT Update", "sudo apt update", aptStyle},
-			{"APT Upgrade", "sudo apt upgrade -y", aptStyle},
-			{"APT Autoremove", "sudo apt autoremove -y", aptStyle},
-			{"APT Autoclean", "sudo apt autoclean", aptStyle},
+			{"APT Update", "sudo dnf update", aptStyle},
+			{"APT Upgrade", "sudo dnf upgrade -y", aptStyle},
+			{"APT Autoremove", "sudo dnf autoremove -y", aptStyle},
 		},
 	},
 	{
