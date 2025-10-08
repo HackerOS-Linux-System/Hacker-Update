@@ -58,7 +58,7 @@ var (
 	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#55FFFF"))
 
 	// Style dla sekcji z neonowymi kolorami
-	dnfStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF55FF"))
+	aptStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF55FF"))
 	flatpakStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))
 	snapStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF"))
 	fwStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#32CD32"))
@@ -107,11 +107,12 @@ type Section struct {
 
 var sections = []Section{
 	{
-		Name: "DNF System Update",
+		Name: "APT System Update",
 		Commands: []Command{
-			{"DNF Update", "sudo dnf update", dnfStyle},
-			{"DNF Upgrade", "sudo dnf upgrade -y", dnfStyle},
-			{"DNF Autoremove", "sudo dnf autoremove -y", dnfStyle},
+			{"APT Update", "sudo apt update", aptStyle},
+			{"APT Upgrade", "sudo apt upgrade -y", aptStyle},
+			{"APT Autoremove", "sudo apt autoremove -y", aptStyle},
+			{"APT Autoclean", "sudo apt autoclean", aptStyle},
 		},
 	},
 	{
@@ -166,7 +167,7 @@ func printSectionHeader(name string) string {
 // Pobieranie ikony Unicode sekcji
 func getSectionIcon(name string) string {
 	switch name {
-		case "DNF System Update":
+		case "APT System Update":
 			return "┃┃"
 		case "Flatpak Update":
 			return "┣┫"
@@ -182,7 +183,7 @@ func getSectionIcon(name string) string {
 // Pobieranie koloru sekcji
 func getSectionColor(name string) lipgloss.Color {
 	switch name {
-		case "DNF System Update":
+		case "APT System Update":
 			return lipgloss.Color("#FF55FF")
 		case "Flatpak Update":
 			return lipgloss.Color("#FFD700")
@@ -204,6 +205,7 @@ func showStatusTable(logs []string) string {
 		{Title: "Status", Width: 15},
 		{Title: "Output", Width: 55},
 	}
+
 	rows := []table.Row{}
 	for _, log := range logs {
 		parts := strings.SplitN(log, "|", 4)
@@ -217,12 +219,14 @@ func showStatusTable(logs []string) string {
 			rows = append(rows, table.Row{icon, parts[0], parts[1], parts[2], style.Render(parts[3])})
 		}
 	}
+
 	t := table.New(
 		table.WithColumns(columns),
 		       table.WithRows(rows),
 		       table.WithFocused(true),
 		       table.WithHeight(len(rows)),
 	)
+
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 	BorderStyle(lipgloss.NormalBorder()).
@@ -235,6 +239,7 @@ func showStatusTable(logs []string) string {
 	Background(lipgloss.Color("#1A1A2E")).
 	Bold(true)
 	t.SetStyles(s)
+
 	return panelStyle.Render(t.View())
 }
 
@@ -262,14 +267,14 @@ func runCommand(ctx context.Context, cmd string, color lipgloss.Style) (string, 
 
 // Ulepszony Model Bubble Tea dla paska postępu z Unicode i animacją
 type progressModel struct {
-	progress  progress.Model
-	spinner   spinner.Model
-	section   string
-	cmd       string
-	percent   float64
-	done      bool
-	blockIdx  int
-	ctx       context.Context
+	progress progress.Model
+	spinner  spinner.Model
+	section  string
+	cmd      string
+	percent  float64
+	done     bool
+	blockIdx int
+	ctx      context.Context
 }
 
 func newProgressModel(ctx context.Context, section, cmd string) progressModel {
@@ -329,8 +334,8 @@ func (m progressModel) View() string {
 	bar := m.progress.ViewAs(m.percent)
 	percent := fmt.Sprintf(" %3.0f%% ", m.percent*100)
 	return lipgloss.JoinVertical(lipgloss.Center,
-				     lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Render("▌ "+m.section+": Executing "+m.cmd+" ▐"),
-				     progressBarStyle.Render("["+bar+"]"),
+				     lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Render("▌ " + m.section + ": " + m.cmd + " ▐"),
+				     progressBarStyle.Render("[" + bar + "]"),
 				     warningStyle.Render(percent),
 	)
 }
@@ -400,7 +405,7 @@ func (m menuModel) View() string {
 		s.WriteString(m.spinner.View() + " Scanning Neural Interface...\n\n")
 	}
 	for i, choice := range m.choices {
-		cursor := " "
+		cursor := "   "
 		if m.cursor == i {
 			cursor = "▶▶▶ "
 		}
@@ -438,12 +443,14 @@ func main() {
 	fmt.Println()
 
 	var logs []string
+
 	for _, section := range sections {
 		if ctx.Err() == context.Canceled {
 			return
 		}
 		fmt.Println(printSectionHeader(section.Name))
 		fmt.Println(separatorStyle)
+
 		for _, cmd := range section.Commands {
 			if ctx.Err() == context.Canceled {
 				return
@@ -490,19 +497,21 @@ func main() {
 			if stderr != "" {
 				fmt.Println(stderr)
 			}
+
 			statusPanel := successStyle
 			if !success {
 				statusPanel = errorStyle
 			}
-			fmt.Println(statusPanel.Render("┌─ "+cmd.Name+" ─┐\n│ "+func() string {
+			fmt.Println(statusPanel.Render("┌─ " + cmd.Name + " ─┐\n│ " + func() string {
 				if success {
 					return "EXECUTED"
 				}
 				return "ABORTED"
-			}()+" │\n└─────────────┘"))
+			}() + " │\n└─────────────┘"))
 			fmt.Println()
 		}
-		fmt.Println(successStyle.Render("┌─ "+section.Name+" TERMINATED ─┐"))
+
+		fmt.Println(successStyle.Render("┌─ " + section.Name + " TERMINATED ─┐"))
 		fmt.Println(separatorStyle)
 		time.Sleep(300 * time.Millisecond)
 	}
@@ -521,6 +530,7 @@ func main() {
 		fmt.Println(errorStyle.Render("INTERFACE ERROR: " + err.Error()))
 		os.Exit(1)
 	}
+
 	if ctx.Err() == context.Canceled {
 		return
 	}
